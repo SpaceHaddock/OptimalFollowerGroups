@@ -29,9 +29,25 @@ namespace OptimalFollowerGroups
 		public bool high_stamina = false;
 		public bool burst_of_power = false;
 		public bool epic_mount = false;
-
+		
 		public double missions_completed = 0;
-		public double missions_completed_2 = 0;
+
+		public Follower Clone()
+		{
+			return new Follower()
+			{
+				name = name,
+				abilities = (int[]) abilities.Clone(),
+				race = race,
+				race_friends = race_friends,
+				trait_counter = trait_counter,
+				combat_experience = combat_experience,
+				high_stamina = high_stamina,
+				burst_of_power = burst_of_power,
+				epic_mount = epic_mount,
+				missions_completed = missions_completed
+			};
+		}
 	}
 
 	//Represents a mission which contains ability counters as well as trait counters
@@ -39,7 +55,7 @@ namespace OptimalFollowerGroups
 	{
 		public int[] abilities;
 		public string trait;
-		public Follower[] best_group;
+		public List<Follower> best_group;
 		public double prescence = 0;
 
 		public Mission Clone()
@@ -53,8 +69,6 @@ namespace OptimalFollowerGroups
 	public class Group
 	{
 		public List<Follower> followers = new List<Follower>();
-		public List<double> mission_results = new List<double>();
-		public double total_ability_used { get { return mission_results.Sum(); } }
 
 		//All possible combinations of followers
 		List<Follower[]> _combinations_followers = null;
@@ -63,9 +77,7 @@ namespace OptimalFollowerGroups
 			get
 			{
 				if (_combinations_followers == null)
-				{
 					SetupCombos();
-				}
 				return _combinations_followers;
 			}
 			set { _combinations_followers = value; }
@@ -83,8 +95,8 @@ namespace OptimalFollowerGroups
 		//Find best result for mission
 		public void RunMission(Mission input_mission)
 		{
-			mission_results.Add(0);
 			input_mission.best_group = null;
+			input_mission.prescence = 0;
 			//Go through each combination of followers in this group
 			foreach (Follower[] follower_combo in combinations_followers)
 			{
@@ -96,7 +108,6 @@ namespace OptimalFollowerGroups
 					{
 						if(ability >= 0 && mission.abilities[ability] != 0)
 						{
-							f.missions_completed++;
 							mission.abilities[ability]--;
 							prescence += 3;
 						}
@@ -124,20 +135,15 @@ namespace OptimalFollowerGroups
 						if (!mounted && f.high_stamina) prescence++;
 						if (mounted && f.burst_of_power) prescence++;
 					}
-				}
 
-				//Set last value to larger of the two, your best and this run
-				if(mission_results.Last() < prescence)
-				{
-					mission_results[mission_results.Count - 1] = prescence;
-					input_mission.best_group = follower_combo;
-					input_mission.prescence = prescence;
+					prescence = Math.Min(prescence, 21);
+					if(prescence > input_mission.prescence)
+					{
+						input_mission.prescence = prescence;
+						input_mission.best_group = new List<Follower>(follower_combo);
+					}
 				}
 			}
-
-			if(input_mission.best_group != null)
-				foreach (Follower follower in input_mission.best_group)
-					follower.missions_completed++;
 		}
 	}
 
@@ -212,7 +218,8 @@ namespace OptimalFollowerGroups
 				}
 
 				//Run followers on missions
-				writer.WriteLine("\nBest followers for each mission");
+				writer.WriteLine();
+				writer.WriteLine("Best followers for each mission");
 				foreach (Mission mission in missions)
 				{
 					my_followers.RunMission(mission);
@@ -220,29 +227,30 @@ namespace OptimalFollowerGroups
 					foreach (Follower f in mission.best_group)
 					{
 						writer.Write(f.name + "/");
-						f.missions_completed_2++;
+						f.missions_completed++;
 					}
-					writer.Write("\n");
+					writer.WriteLine();
 				}
 
 				//Print follower information out
-				writer.WriteLine("\nNumber of missions each follower went on");
-				my_followers.followers.Sort((a, b) => a.missions_completed_2.CompareTo(b.missions_completed_2));
+				writer.WriteLine();
+				writer.WriteLine("Number of missions each follower went on");
+				my_followers.followers.Sort((a, b) => a.missions_completed.CompareTo(b.missions_completed));
 				my_followers.followers.Reverse();
 				foreach (Follower follower in my_followers.followers)
-					writer.WriteLine(String.Format("{0}: {1}", follower.name, follower.missions_completed_2));
+					writer.WriteLine(String.Format("{0}: {1}", follower.name, follower.missions_completed));
 
 				//Find mr perfect amongst all the possible combinations
 				//Create all combinations of abilities (no repeats)
-				writer.WriteLine("\nLargest improvement combos");
+				writer.WriteLine();
+				writer.WriteLine("Largest improvement combos");
 				List<Follower> followers = new List<Follower>();
 				for (int i = 0; i < ability_count; i++)
 					for (int j = i + 1; j < ability_count; j++)
 						followers.Add(new Follower() { abilities = new int[] { i, j } });
 
-				List<double> mission_prescence = new List<double>();
 				double sum_prescence = missions.Sum(item => item.prescence);
-				List<Tuple<Follower, double>> track_best_followers = new List<Tuple<Follower, double>>();
+				var track_best_followers = new List<Tuple<Follower, double>>();
 				foreach (Follower follower in followers)
 				{
 					Group one_more = new Group();
@@ -260,6 +268,41 @@ namespace OptimalFollowerGroups
 
 				foreach(Tuple<Follower, double> t in track_best_followers)
 					writer.WriteLine(string.Format("{0}/{1} -- +{2}", ability_names[t.Item1.abilities[0]], ability_names[t.Item1.abilities[1]], t.Item2));
+
+				//Find who is best with dance studio book
+				writer.WriteLine();
+				writer.WriteLine("Who is best with dancer");
+				track_best_followers = new List<Tuple<Follower, double>>();
+				for (int i = 0; i < my_followers.followers.Count; i++)
+				{
+					Group plus_dance_studio = new Group();
+					List<Follower> use_us = new List<Follower>(my_followers.followers);
+					use_us[i] = use_us[i].Clone();
+					use_us[i].abilities[2] = ability_names_list.FindIndex(item => item == "Danger Zones");
+					plus_dance_studio.followers = use_us;
+					foreach (Mission mission in missions)
+						plus_dance_studio.RunMission(mission);
+					double diff = missions.Sum(item=>item.prescence) - sum_prescence;
+					track_best_followers.Add(new Tuple<Follower, double>(use_us[i], diff));
+				}
+
+				track_best_followers.Sort((a, b) => a.Item2.CompareTo(b.Item2));
+				track_best_followers.Reverse();
+
+				foreach (Tuple<Follower, double> t in track_best_followers)
+					writer.WriteLine(string.Format("{0} -- +{1}", t.Item1.name, t.Item2));
+
+				writer.WriteLine();
+				writer.WriteLine("New best possible missions if 1 person had dancer");
+				foreach (Mission mission in missions)
+				{
+					writer.Write((mission.prescence) + ": ");
+					foreach (Follower f in mission.best_group)
+						writer.Write(f.name + "/");
+					writer.WriteLine();
+				}
+
+				System.Diagnostics.Process.Start("WriteText.txt");
 			}
 		}
 
